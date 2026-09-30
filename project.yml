@@ -1,0 +1,45 @@
+name: 0xst4ck
+options:
+  bundleIdPrefix: sh.st4ck
+  deploymentTarget:
+    iOS: "16.0"
+  createIntermediateGroups: true
+  developmentLanguage: en
+
+configs:
+  Debug: debug
+  Release: release
+
+settings:
+  base:
+    SWIFT_VERSION: "5.9"
+    DEVELOPMENT_TEAM: ""
+    CODE_SIGN_STYLE: Manual
+    CODE_SIGNING_ALLOWED: NO
+    CODE_SIGNING_REQUIRED: NO
+    CODE_SIGN_IDENTITY: ""
+    ENABLE_BITCODE: NO
+    TARGETED_DEVICE_FAMILY: "1,2"
+
+targets:
+  0xst4ck:
+    type: application
+    platform: iOS
+    sources:
+      - 0xst4ck
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: sh.st4ck.zerox
+        PRODUCT_NAME: 0xst4ck
+        PRODUCT_MODULE_NAME: stack0x
+        MARKETING_VERSION: "0.1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription: "0xst4ck needs Bluetooth to talk to the scooter controller."
+        INFOPLIST_KEY_NSBluetoothPeripheralUsageDescription: "0xst4ck needs Bluetooth to talk to the scooter controller."
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
+        INFOPLIST_KEY_UIStatusBarStyle: UIStatusBarStyleLightContent
+        INFOPLIST_KEY_UIRequiresFullScreen: YES
+        INFOPLIST_KEY_UISupportedInterfaceOrientations: "UIInterfaceOrientationPortrait"
+        INFOPLIST_KEY_UIViewControllerBasedStatusBarAppearance: NO
