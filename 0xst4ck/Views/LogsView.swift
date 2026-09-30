@@ -3,11 +3,18 @@ import SwiftUI
 struct LogsView: View {
     @EnvironmentObject var log: LogStore
     @EnvironmentObject var ble: BLEManager
+    @EnvironmentObject var discord: DiscordSink
     @State private var rawHex: String = "AA CC 00 08 0D 0E 1C 00 14 00 00 00 00 00 64 03 01 02 00 55"
+    @State private var showingDiscord: Bool = false
+    @State private var pushStatus: String = ""
 
     var body: some View {
         VStack(spacing: 0) {
             toolbar
+            if showingDiscord {
+                discordPanel
+                Divider().background(Theme.stroke)
+            }
             Divider().background(Theme.stroke)
             logList
             Divider().background(Theme.stroke)
@@ -16,12 +23,60 @@ struct LogsView: View {
     }
 
     private var toolbar: some View {
-        HStack {
+        HStack(spacing: 8) {
             Text("\(log.entries.count) entries").font(Theme.monoSmall).foregroundColor(Theme.textDim)
             Spacer()
+            Button {
+                pushToDiscord()
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "paperplane.fill").font(.system(size: 10))
+                    Text(discord.isConfigured ? "push" : "no wh")
+                }
+            }
+            .buttonStyle(SmallActionButtonStyle())
+            .disabled(!discord.isConfigured)
+            Button(showingDiscord ? "hide" : "webhook") { showingDiscord.toggle() }
+                .buttonStyle(SmallActionButtonStyle())
             Button("clear") { log.clear() }.buttonStyle(SmallActionButtonStyle())
         }
         .padding(.horizontal, 16).padding(.vertical, 8)
+    }
+
+    private var discordPanel: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("discord webhook").font(Theme.monoSmall).foregroundColor(Theme.textDim)
+            TextField("https://discord.com/api/webhooks/...", text: $discord.webhookURL)
+                .font(.system(size: 11, design: .monospaced))
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled(true)
+                .padding(8)
+                .background(Theme.card)
+                .cornerRadius(6)
+                .overlay(RoundedRectangle(cornerRadius: 6).stroke(Theme.stroke))
+            Toggle(isOn: $discord.autoPushErrors) {
+                Text("auto-push warn/error/sec").font(Theme.monoSmall)
+            }
+            .toggleStyle(SwitchToggleStyle(tint: Theme.accent))
+            HStack {
+                Text(discord.lastStatus.isEmpty ? "idle" : discord.lastStatus)
+                    .font(Theme.monoSmall).foregroundColor(Theme.textDim)
+                Spacer()
+                if !pushStatus.isEmpty {
+                    Text(pushStatus).font(Theme.monoSmall).foregroundColor(Theme.accent)
+                }
+            }
+        }
+        .padding(12)
+        .background(Theme.bgElevated)
+    }
+
+    private func pushToDiscord() {
+        pushStatus = "sending…"
+        discord.push(log.entries) { ok, msg in
+            pushStatus = ok ? "sent ✓" : "fail: \(msg)"
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3) { pushStatus = "" }
+        }
     }
 
     private var logList: some View {

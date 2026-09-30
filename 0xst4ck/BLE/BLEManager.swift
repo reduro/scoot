@@ -159,7 +159,9 @@ final class BLEManager: NSObject, ObservableObject {
 
     private func startKeepAlive() {
         stopKeepAlive()
-        keepAlivePeriod = scooter.antiShortcutEnabled ? 0.5 : 1.0
+        // Match the original app's 2s cadence when just polling.
+        // Speed up only when we're actively rebriding.
+        keepAlivePeriod = scooter.antiShortcutEnabled ? 1.0 : 2.0
         keepAliveTimer = Timer.scheduledTimer(withTimeInterval: keepAlivePeriod, repeats: true) { [weak self] _ in
             self?.keepAliveTick()
         }
@@ -171,25 +173,35 @@ final class BLEManager: NSObject, ObservableObject {
         keepAliveTimer = nil
     }
 
+    /// Keepalive tick — mimics the original app:
+    ///  - regular tick: only READ the characteristic (poll status)
+    ///  - anti-shortcut mode: WRITE a rebride frame each tick
+    ///  - overspeed punish: WRITE a lock frame once
+    /// No re-auth spam (original app auths once at connect).
     private func keepAliveTick() {
-        var p = scooter.params
+        guard let peripheral, let writeCh else { return }
 
-        if scooter.legalMode {
-            p.speedLimit = 20
-            p.flags.insert(.speedLimit)
-        }
+        let overspeed = scooter.punishOnOverspeed &&
+                        scooter.driverSpeed > scooter.overspeedThreshold
 
-        // Punish overspeed by temporarily locking
-        if scooter.punishOnOverspeed && scooter.driverSpeed > scooter.overspeedThreshold {
-            p.isLocked = true
-            log?.sec("OVERSPEED \(scooter.driverSpeed) > \(scooter.overspeedThreshold) → lock")
-        }
-
-        sendConfig(p, tag: "tick")
-
-        // Send auth periodically to keep the controller session alive (~ every 5s).
-        if scooter.txCount % 5 == 0 {
-            sendAuth()
+        if scooter.antiShortcutEnabled || scooter.legalMode || overspeed {
+            var p = scooter.params
+            if scooter.legalMode {
+                p.speedLimit = 20
+                p.flags.insert(.speedLimit)
+            }
+            if overspeed {
+                p.isLocked = true
+                log?.sec("OVERSPEED \(scooter.driverSpeed) > \(scooter.overspeedThreshold) → lock")
+            }
+            let frame = ProtocolCodec.buildConfig(p)
+            peripheral.writeValue(frame, for: writeCh, type: .withoutResponse)
+            log?.tx(frame, tag: "rebride")
+            scooter.lastTxAt = Date()
+            scooter.txCount += 1
+        } else {
+            // Just poll status — no writes.
+            peripheral.readValue(for: writeCh)
         }
     }
 

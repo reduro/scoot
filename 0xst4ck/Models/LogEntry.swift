@@ -17,10 +17,20 @@ final class LogStore: ObservableObject {
     @Published private(set) var entries: [LogEntry] = []
     private let maxEntries = 500
 
+    private weak var discord: DiscordSink?
+
+    func attach(discord: DiscordSink) { self.discord = discord }
+
     func log(_ kind: LogKind, _ text: String, hex: String? = nil) {
-        entries.append(LogEntry(at: Date(), kind: kind, text: text, hex: hex))
+        let entry = LogEntry(at: Date(), kind: kind, text: text, hex: hex)
+        entries.append(entry)
         if entries.count > maxEntries {
             entries.removeFirst(entries.count - maxEntries)
+        }
+        // Auto-push warn/error/sec if user opted in.
+        if let d = discord, d.autoPushErrors, d.isConfigured,
+           kind == .warn || kind == .error || kind == .sec {
+            d.push([entry], header: "auto-push \(kind.rawValue)")
         }
     }
 
