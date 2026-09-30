@@ -130,16 +130,17 @@ final class BLEManager: NSObject, ObservableObject {
 
     func disconnect(gracefully: Bool = true) {
         stopKeepAlive()
-        if gracefully, scooter.antiShortcutEnabled, let peripheral, let writeCh {
+        if gracefully, let peripheral, let writeCh {
+            // "Apparence légale" strategy: leave the scooter fully rideable
+            // but capped at 20 km/h. No lock (no "99" on dash, no suspicion).
             var p = scooter.params
             p.speedLimit = 20
-            p.strongLimit = 1
-            p.isLocked = true
             p.flags.insert(.speedLimit)
+            p.isLocked = false          // stay unlocked
             let frame = ProtocolCodec.buildConfig(p)
             peripheral.writeValue(frame, for: writeCh, type: writeType(for: writeCh))
-            log?.tx(frame, tag: "graceful-lock")
-            log?.sec("sent legal-lock frame before disconnect")
+            log?.tx(frame, tag: "graceful-cap20")
+            log?.sec("sent legal-cap frame before disconnect")
         }
         if let p = peripheral { central.cancelPeripheralConnection(p) }
     }

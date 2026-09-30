@@ -11,6 +11,7 @@ struct SecurityView: View {
             VStack(spacing: 14) {
                 guardCard
                 capCard
+                stealthNote
                 panicButton
 
                 Button(showAdvanced ? "hide advanced" : "advanced ▾") {
@@ -121,6 +122,16 @@ struct SecurityView: View {
         }
     }
 
+    private var stealthNote: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("stealth strategy").font(Theme.monoSmall).foregroundColor(Theme.textDim)
+            Text("• at disconnect: scooter capped at 20 km/h, stays fully rideable").font(Theme.monoSmall).foregroundColor(Theme.text)
+            Text("• no lock, no \"99\" dashboard, nothing suspicious").font(Theme.monoSmall).foregroundColor(Theme.text)
+            Text("• looks like a stock legal scooter to a passer-by").font(Theme.monoSmall).foregroundColor(Theme.accent)
+        }
+        .cardBg()
+    }
+
     // MARK: — Advanced
 
     private var advancedSection: some View {
@@ -152,7 +163,7 @@ struct SecurityView: View {
             Button(action: panicLock) {
                 HStack {
                     Image(systemName: "lock.fill")
-                    Text("PANIC · FULL LOCK").font(Theme.mono.bold())
+                    Text("PANIC · FULL LOCK (shows 99)").font(Theme.mono.bold())
                 }
                 .frame(maxWidth: .infinity).padding(.vertical, 14)
                 .background(Theme.danger.opacity(0.15))
@@ -160,6 +171,8 @@ struct SecurityView: View {
                 .cornerRadius(10)
                 .foregroundColor(Theme.danger)
             }
+            Text("full lock is DASHBOARD-VISIBLE (\"99\") — anti-theft only. NOT for hiding from a cop check.")
+                .font(Theme.monoSmall).foregroundColor(Theme.warn)
         }
     }
 
