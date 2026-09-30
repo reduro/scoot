@@ -73,6 +73,19 @@ final class BLEManager: NSObject, ObservableObject {
         log.info("0xst4ck booted")
     }
 
+    func attach(discord: DiscordSink) {
+        self.discord = discord
+    }
+
+    private weak var discord: DiscordSink?
+
+    /// Auto-flush the whole log to Discord on connect/disconnect events
+    /// so we don't need to babysit the phone.
+    private func autoFlush(tag: String) {
+        guard let discord, discord.isConfigured, let log else { return }
+        discord.push(log.entries, header: "auto-flush · \(tag)") { _, _ in }
+    }
+
     // MARK: — Scan
 
     func startScan() {
@@ -251,7 +264,12 @@ extension BLEManager: CBCentralManagerDelegate {
         notifyCh = nil
         scooter.authOK = false
         state = .idle
-        log?.warn("disconnected")
+        if let e = error {
+            log?.warn("disconnected · \(e.localizedDescription)")
+        } else {
+            log?.warn("disconnected")
+        }
+        autoFlush(tag: "disconnect")
     }
 }
 
@@ -282,6 +300,7 @@ extension BLEManager: CBPeripheralDelegate {
             log?.info("link ready")
             sendAuth()
             startKeepAlive()
+            autoFlush(tag: "link-ready")
         }
     }
 

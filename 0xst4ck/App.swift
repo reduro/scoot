@@ -15,6 +15,7 @@ struct ZerohStackApp: App {
                 .preferredColorScheme(.dark)
                 .onAppear {
                     ble.attach(log: log)
+                    ble.attach(discord: discord)
                     log.attach(discord: discord)
                 }
         }
