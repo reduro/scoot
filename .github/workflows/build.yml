@@ -18,8 +18,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Show Xcode version
-        run: xcodebuild -version
+      - name: Select latest Xcode
+        run: |
+          ls /Applications | grep -i "^Xcode" || true
+          sudo xcode-select -s "$(ls -d /Applications/Xcode_16*.app 2>/dev/null | sort -V | tail -1 || echo /Applications/Xcode.app)"
+          xcodebuild -version
 
       - name: Install XcodeGen
         run: brew install xcodegen

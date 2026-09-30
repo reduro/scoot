@@ -5,6 +5,8 @@ options:
     iOS: "16.0"
   createIntermediateGroups: true
   developmentLanguage: en
+  xcodeVersion: "15.0"
+  objectVersion: 56
 
 configs:
   Debug: debug
