@@ -194,36 +194,64 @@ final class BLEManager: NSObject, ObservableObject {
         keepAliveTimer = nil
     }
 
-    /// Keepalive tick — mimics the original app:
-    ///  - regular tick: only READ the characteristic (poll status)
-    ///  - anti-shortcut mode: WRITE a rebride frame each tick
-    ///  - overspeed punish: WRITE a lock frame once
-    /// No re-auth spam (original app auths once at connect).
+    /// Keepalive tick — REACTIVE strategy (no bip spam).
+    ///
+    /// We poll status silently every 2s. We only write a config frame
+    /// when something interesting is detected:
+    ///  1. anti-shortcut: measured speed exceeds the configured cap →
+    ///     one rebride write to reapply Speed_Limit
+    ///  2. overspeed punish: measured speed > threshold →
+    ///     one lock write
+    ///  3. legal-mode drift: measured speed > 22 while legal mode on →
+    ///     one rebride write to Speed_Limit=20
+    ///
+    /// Each intervention is rate-limited (min 3s between writes) so
+    /// the scooter never bips more than once every few seconds.
+    private var lastInterventionAt: Date = .distantPast
+    private let interventionCooldown: TimeInterval = 3.0
+
     private func keepAliveTick() {
         guard let peripheral, let writeCh else { return }
 
-        let overspeed = scooter.punishOnOverspeed &&
-                        scooter.driverSpeed > scooter.overspeedThreshold
+        // Always read to keep the notify link fresh and get an updated
+        // Driver_Speed. This never causes a bip.
+        peripheral.readValue(for: writeCh)
 
-        if scooter.antiShortcutEnabled || scooter.legalMode || overspeed {
-            var p = scooter.params
-            if scooter.legalMode {
-                p.speedLimit = 20
-                p.flags.insert(.speedLimit)
-            }
-            if overspeed {
-                p.isLocked = true
-                log?.sec("OVERSPEED \(scooter.driverSpeed) > \(scooter.overspeedThreshold) → lock")
-            }
-            let frame = ProtocolCodec.buildConfig(p)
+        let now = Date()
+        guard now.timeIntervalSince(lastInterventionAt) > interventionCooldown else { return }
+
+        let speed = scooter.driverSpeed
+        var reason: String? = nil
+        var frameParams = scooter.params
+
+        if scooter.punishOnOverspeed && speed > scooter.overspeedThreshold {
+            frameParams.isLocked = true
+            reason = "punish · speed=\(speed) > \(scooter.overspeedThreshold)"
+        } else if scooter.legalMode && speed > 22 {
+            frameParams.speedLimit = 20
+            frameParams.flags.insert(.speedLimit)
+            reason = "legal-drift · speed=\(speed) > 22"
+        } else if scooter.antiShortcutEnabled && speed > Int(scooter.params.speedLimit) + 3 {
+            frameParams.flags.insert(.speedLimit)
+            reason = "anti-shortcut · speed=\(speed) > cap+3"
+        }
+
+        if let reason = reason {
+            let frame = ProtocolCodec.buildConfig(frameParams)
             peripheral.writeValue(frame, for: writeCh, type: writeType(for: writeCh))
+            log?.sec("intervene ← \(reason)")
             log?.tx(frame, tag: "rebride")
             scooter.lastTxAt = Date()
             scooter.txCount += 1
-        } else {
-            // Just poll status — no writes.
-            peripheral.readValue(for: writeCh)
+            lastInterventionAt = now
         }
+    }
+
+    /// Push the current config once (called on link-ready + on manual push).
+    /// One bip, one shot.
+    func sendConfigOneShot(tag: String = "boot-config") {
+        sendConfig(tag: tag)
+        lastInterventionAt = Date()
     }
 
     func updateKeepAliveRate() {
@@ -307,6 +335,11 @@ extension BLEManager: CBPeripheralDelegate {
             state = .ready
             log?.info("link ready")
             sendAuth()
+            // Push current cap once so a fresh-booted / just-derestricted
+            // scooter is reined in immediately. One bip, then silence.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+                self?.sendConfigOneShot(tag: "boot-config")
+            }
             startKeepAlive()
             autoFlush(tag: "link-ready")
         }

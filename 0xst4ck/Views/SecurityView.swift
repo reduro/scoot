@@ -65,7 +65,7 @@ struct SecurityView: View {
             }
             .toggleStyle(SwitchToggleStyle(tint: Theme.accent))
 
-            Text("aggressive rebride every 500 ms. also sends a legal-lock frame at graceful disconnect.")
+            Text("reactive rebride: silent polling ; write only when measured speed exceeds the cap. min 3 s between interventions — no bip spam.")
                 .font(Theme.monoSmall).foregroundColor(Theme.textDim)
         }
         .cardBg()
