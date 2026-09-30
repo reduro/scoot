@@ -31,6 +31,11 @@ final class ScooterState: ObservableObject {
     @Published var txCount: Int = 0
     @Published var rxCount: Int = 0
 
+    // Intrusion tracking — set when someone derestricted with the hardware combo
+    // while our app wasn't connected. Cleared once we've corrected.
+    @Published var intrusionDetectedAt: Date? = nil
+    @Published var intrusionSummary: String = ""
+
     func applyStatus(_ s: StatusReading) {
         driverSpeed = Int(s.driverSpeed)
         driverVolt  = Int(s.driverVolt)

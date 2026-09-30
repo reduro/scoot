@@ -30,6 +30,15 @@ enum Opcode: UInt8 {
     case configResponse  = 0xBB
 }
 
+/// Sub-ops for opcode 0xCC (byte[2] of the config frame), extracted
+/// from the Speed Master 365 v1.9 native Qt binary.
+enum ConfigSubOp: UInt8 {
+    case gearCycle       = 0x11  // cycle ride mode 1→2→3
+    case headlightToggle = 0x22  // toggle headlight on/off
+    case powerToggle     = 0x33  // power the scooter on/off remotely
+    case ackConfigResp   = 0xBB  // acknowledge a config-response
+}
+
 struct FrameFlags: OptionSet {
     let rawValue: UInt8
     static let mph        = FrameFlags(rawValue: 1 << 0)

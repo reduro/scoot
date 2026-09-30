@@ -7,12 +7,67 @@ struct DashboardView: View {
         let s = ble.scooter
         ScrollView {
             VStack(spacing: 14) {
+                if let at = s.intrusionDetectedAt {
+                    intrusionBanner(at: at, summary: s.intrusionSummary)
+                }
                 bigSpeed(s)
                 statRow(s)
                 tripRow(s)
+                controlRow
                 lockPanel(s)
             }
             .padding(16)
+        }
+    }
+
+    private func intrusionBanner(at: Date, summary: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundColor(Theme.danger)
+                Text("INTRUSION DETECTED").font(Theme.mono.bold()).foregroundColor(Theme.danger)
+                Spacer()
+                Button(action: { ble.scooter.intrusionDetectedAt = nil }) {
+                    Image(systemName: "xmark").foregroundColor(Theme.textDim)
+                }
+            }
+            Text(summary).font(Theme.monoSmall).foregroundColor(Theme.text)
+            Text("scooter was derestricted physically — auto-healed to your cap")
+                .font(Theme.monoSmall).foregroundColor(Theme.textDim)
+        }
+        .padding(12)
+        .background(Theme.danger.opacity(0.15))
+        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Theme.danger, lineWidth: 1.5))
+        .cornerRadius(10)
+    }
+
+    private var controlRow: some View {
+        HStack(spacing: 10) {
+            controlButton(label: "gear",
+                          icon: "arrow.triangle.2.circlepath",
+                          color: Theme.cyan) { ble.cycleGear() }
+            controlButton(label: "lamp",
+                          icon: ble.scooter.lampOn ? "lightbulb.fill" : "lightbulb",
+                          color: ble.scooter.lampOn ? Theme.warn : Theme.textDim) { ble.toggleHeadlight() }
+            controlButton(label: "power",
+                          icon: "power",
+                          color: Theme.accent) { ble.togglePower() }
+        }
+    }
+
+    private func controlButton(label: String, icon: String, color: Color,
+                                action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            VStack(spacing: 6) {
+                Image(systemName: icon).font(.system(size: 22))
+                Text(label).font(Theme.monoSmall)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 14)
+            .background(color.opacity(0.10))
+            .overlay(RoundedRectangle(cornerRadius: 10).stroke(color, lineWidth: 1))
+            .cornerRadius(10)
+            .foregroundColor(color)
         }
     }
 

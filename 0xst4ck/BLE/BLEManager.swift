@@ -177,6 +177,37 @@ final class BLEManager: NSObject, ObservableObject {
         scooter.txCount += 1
     }
 
+    /// Send a config frame with a specific sub-op in byte[2]. Extracted
+    /// from Speed Master 365 v1.9 — used for gear cycle / headlight /
+    /// power toggle.
+    private func sendSubOp(_ sub: ConfigSubOp, tag: String) {
+        guard let peripheral, let writeCh else { return }
+        let frame = ProtocolCodec.buildConfig(scooter.params,
+                                              opcode: Opcode.config.rawValue,
+                                              arg: sub.rawValue)
+        peripheral.writeValue(frame, for: writeCh, type: writeType(for: writeCh))
+        log?.tx(frame, tag: tag)
+        scooter.lastTxAt = Date()
+        scooter.txCount += 1
+    }
+
+    func cycleGear()      { sendSubOp(.gearCycle,       tag: "gear-cycle") }
+    func toggleHeadlight() { sendSubOp(.headlightToggle, tag: "headlight-toggle") }
+    func togglePower()    { sendSubOp(.powerToggle,     tag: "power-toggle") }
+
+    /// Ask the controller to broadcast its current config (opcode 0xBB reply).
+    /// Signaled by sending a 0xCC frame with configOK=0 in byte[16].
+    func loadSettingsFromController() {
+        guard let peripheral, let writeCh else { return }
+        var p = scooter.params
+        p.configOK = false
+        let frame = ProtocolCodec.buildConfig(p)
+        peripheral.writeValue(frame, for: writeCh, type: writeType(for: writeCh))
+        log?.tx(frame, tag: "load-cfg")
+        scooter.lastTxAt = Date()
+        scooter.txCount += 1
+    }
+
     // MARK: — Keepalive loop
 
     private func startKeepAlive() {
@@ -253,6 +284,47 @@ final class BLEManager: NSObject, ObservableObject {
     func sendConfigOneShot(tag: String = "boot-config") {
         sendConfig(tag: tag)
         lastInterventionAt = Date()
+    }
+
+    /// Compare the controller-reported config with what the user wants.
+    /// If SpeedLimit_Flag is off, or the reported cap is higher than the
+    /// user's, someone derestricted this scooter physically. We log it
+    /// loudly, mark the intrusion, and let the next sendConfig heal it.
+    private func detectIntrusion(currentConfig p: ConfigParams) {
+        let userCap = scooter.params.speedLimit
+        let controllerCap = p.speedLimit
+        let bridgingOff = !p.flags.contains(.speedLimit)
+        let capBumped = controllerCap > userCap
+
+        if bridgingOff || capBumped {
+            var reasons: [String] = []
+            if bridgingOff { reasons.append("SpeedLimit_Flag=OFF") }
+            if capBumped   { reasons.append("cap=\(controllerCap) > yours=\(userCap)") }
+            let summary = reasons.joined(separator: " · ")
+
+            scooter.intrusionDetectedAt = Date()
+            scooter.intrusionSummary = summary
+            log?.sec("⚠ INTRUSION detected · \(summary)")
+
+            // Force-heal: apply user cap immediately, no cooldown.
+            var fix = scooter.params
+            fix.flags.insert(.speedLimit)
+            fix.speedLimit = userCap
+            let frame = ProtocolCodec.buildConfig(fix)
+            if let peripheral, let writeCh {
+                peripheral.writeValue(frame, for: writeCh, type: writeType(for: writeCh))
+                log?.tx(frame, tag: "intrusion-heal")
+                log?.sec("healed → cap restored to \(userCap)")
+                scooter.txCount += 1
+                lastInterventionAt = Date()
+            }
+        } else {
+            if scooter.intrusionDetectedAt != nil {
+                scooter.intrusionDetectedAt = nil
+                scooter.intrusionSummary = ""
+            }
+            log?.info("controller config matches your cap ✓")
+        }
     }
 
     func updateKeepAliveRate() {
@@ -336,9 +408,13 @@ extension BLEManager: CBPeripheralDelegate {
             state = .ready
             log?.info("link ready")
             sendAuth()
-            // Push current cap once so a fresh-booted / just-derestricted
-            // scooter is reined in immediately. One bip, then silence.
+            // Request the current config from the controller so we can detect
+            // if someone derestricted physically while we were away.
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+                self?.loadSettingsFromController()
+            }
+            // Then apply our cap. One bip, back to silence.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
                 self?.sendConfigOneShot(tag: "boot-config")
             }
             startKeepAlive()
@@ -361,6 +437,7 @@ extension BLEManager: CBPeripheralDelegate {
             case .configResponse(let p):
                 scooter.applyConfigResponse(p)
                 log?.info("config response ; SpeedLimit=\(p.speedLimit) StrongLimit=\(p.strongLimit)")
+                detectIntrusion(currentConfig: p)
             case .status(let s):
                 scooter.applyStatus(s)
             case .unknown(let op):
