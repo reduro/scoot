@@ -119,17 +119,25 @@ final class BLEManager: NSObject, ObservableObject {
         central.connect(dev.peripheral, options: nil)
     }
 
+    /// FFE1 on this controller advertises READ + WRITE (props=0x0A / 10),
+    /// NOT write-without-response (0x04). Pick the correct write type
+    /// so iOS doesn't silently drop the packet and the controller sees
+    /// our frames.
+    private func writeType(for ch: CBCharacteristic) -> CBCharacteristicWriteType {
+        if ch.properties.contains(.writeWithoutResponse) { return .withoutResponse }
+        return .withResponse
+    }
+
     func disconnect(gracefully: Bool = true) {
         stopKeepAlive()
         if gracefully, scooter.antiShortcutEnabled, let peripheral, let writeCh {
-            // Final "legal-lock" push before we drop the link.
             var p = scooter.params
             p.speedLimit = 20
             p.strongLimit = 1
             p.isLocked = true
             p.flags.insert(.speedLimit)
             let frame = ProtocolCodec.buildConfig(p)
-            peripheral.writeValue(frame, for: writeCh, type: .withoutResponse)
+            peripheral.writeValue(frame, for: writeCh, type: writeType(for: writeCh))
             log?.tx(frame, tag: "graceful-lock")
             log?.sec("sent legal-lock frame before disconnect")
         }
@@ -141,7 +149,7 @@ final class BLEManager: NSObject, ObservableObject {
     func sendConfig(_ params: ConfigParams? = nil, tag: String = "config") {
         guard let peripheral, let writeCh else { return }
         let frame = ProtocolCodec.buildConfig(params ?? scooter.params)
-        peripheral.writeValue(frame, for: writeCh, type: .withoutResponse)
+        peripheral.writeValue(frame, for: writeCh, type: writeType(for: writeCh))
         log?.tx(frame, tag: tag)
         scooter.lastTxAt = Date()
         scooter.txCount += 1
@@ -151,8 +159,8 @@ final class BLEManager: NSObject, ObservableObject {
         guard let peripheral, let writeCh else { return }
         let frame = ProtocolCodec.buildAuth(masterPass: scooter.masterPass,
                                             guestPass: scooter.guestPass)
-        peripheral.writeValue(frame, for: writeCh, type: .withoutResponse)
-        log?.tx(frame, tag: "auth")
+        peripheral.writeValue(frame, for: writeCh, type: writeType(for: writeCh))
+        log?.tx(frame, tag: "auth[\(writeType(for: writeCh) == .withResponse ? "req" : "cmd")]")
         scooter.lastTxAt = Date()
         scooter.txCount += 1
     }
@@ -162,7 +170,7 @@ final class BLEManager: NSObject, ObservableObject {
             log?.warn("no writable characteristic")
             return
         }
-        peripheral.writeValue(data, for: writeCh, type: .withoutResponse)
+        peripheral.writeValue(data, for: writeCh, type: writeType(for: writeCh))
         log?.tx(data, tag: tag)
         scooter.lastTxAt = Date()
         scooter.txCount += 1
@@ -208,7 +216,7 @@ final class BLEManager: NSObject, ObservableObject {
                 log?.sec("OVERSPEED \(scooter.driverSpeed) > \(scooter.overspeedThreshold) → lock")
             }
             let frame = ProtocolCodec.buildConfig(p)
-            peripheral.writeValue(frame, for: writeCh, type: .withoutResponse)
+            peripheral.writeValue(frame, for: writeCh, type: writeType(for: writeCh))
             log?.tx(frame, tag: "rebride")
             scooter.lastTxAt = Date()
             scooter.txCount += 1
@@ -332,6 +340,10 @@ extension BLEManager: CBPeripheralDelegate {
     func peripheral(_ peripheral: CBPeripheral,
                     didWriteValueFor characteristic: CBCharacteristic,
                     error: Error?) {
-        if let e = error { log?.error("write err: \(e.localizedDescription)") }
+        if let e = error {
+            log?.error("write err on \(characteristic.uuid.uuidString): \(e.localizedDescription)")
+        } else {
+            log?.info("write ack \(characteristic.uuid.uuidString)")
+        }
     }
 }
